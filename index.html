@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE ENERGY EFFICIENT SKYS | Orbital Telemetry Blockchain</title>
+    <!-- Satellite.js (Standard JS SGP4/Orbital Astrodynamics Engine equivalent to Skyfield) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
+    <style>
+        :root {
+            --bg-void: #05080f;
+            --bg-panel: #0b1120;
+            --bg-card: #111827;
+            --accent-cyan: #00f0ff;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --text-primary: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-subtle: #1e293b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-void);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(90deg, #090d1a 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 1.25rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .pulse-dot {
+            width: 12px;
+            height: 12px;
+            background-color: var(--accent-emerald);
+            border-radius: 50%;
+            box-shadow: 0 0 12px var(--accent-emerald);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+
+        h1 {
+            font-size: 1.35rem;
+            letter-spacing: 2px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-emerald));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        button {
+            background-color: var(--bg-card);
+            color: var(--accent-cyan);
+            border: 1px solid var(--accent-cyan);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background-color: var(--accent-cyan);
+            color: var(--bg-void);
+        }
+
+        button.danger {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+
+        button.danger:hover {
+            background-color: #ef4444;
+            color: white;
+        }
+
+        /* Dashboard Grid */
+        .container {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 1.5rem;
+            padding: 1.5rem 2rem;
+            flex: 1;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 0.75rem;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        /* Sky View Radar Canvas */
+        .radar-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background: radial-gradient(circle, #0d192c 0%, #05080f 75%);
+            border-radius: 50%;
+            border: 1px solid #1e3a5f;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Telemetry Readouts */
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .metric-box {
+            background-color: var(--bg-card);
+            padding: 0.75rem;
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-cyan);
+        }
+
+        .metric-box.energy {
+            border-left-color: var(--accent-emerald);
+        }
+
+        .metric-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .metric-value {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-top: 0.25rem;
+            color: var(--text-primary);
+        }
+
+        /* Blockchain Ledger */
+        .ledger-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            max-height: 75vh;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .ledger-feed::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .ledger-feed::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+
+        .block-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-left: 4px solid var(--accent-emerald);
+            border-radius: 6px;
+            padding: 1rem;
+            animation: slideIn 0.35s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .block-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.6rem;
+        }
+
+        .block-height {
+            font-weight: 700;
+            color: var(--accent-cyan);
+            font-family: 'Courier New', monospace;
+            font-size: 1rem;
+        }
+
+        .block-badge {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .block-data {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.5rem;
+            font-size: 0.82rem;
+            margin-bottom: 0.75rem;
+            background: rgba(5, 8, 15, 0.5);
+            padding: 0.65rem;
+            border-radius: 4px;
+        }
+
+        .hash-row {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            word-break: break-all;
+            margin-top: 0.3rem;
+        }
+
+        .hash-row span {
+            color: var(--accent-amber);
+        }
+
+        .console-log {
+            font-family: 'Courier New', monospace;
+            font-size: 0.78rem;
+            color: var(--accent-emerald);
+            background: #020408;
+            padding: 0.75rem;
+            border-radius: 4px;
+            height: 110px;
+            overflow-y: auto;
+            border: 1px solid #1e293b;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <div class="pulse-dot" id="statusDot"></div>
+            <div>
+                <h1>THE ENERGY EFFICIENT SKYS</h1>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">Global Skyfield SGP4 Constellation Proof-of-Orbit Telemetry Ledger</div>
+            </div>
+        </div>
+        <div class="controls">
+            <span id="loopTimer" style="font-family: monospace; font-size: 0.85rem; color: var(--accent-cyan);">CYCLE: ACTIVE</span>
+            <button id="toggleLoopBtn" onclick="toggleMainLoop()">PAUSE LOOP</button>
+            <button class="danger" onclick="resetChain()">RESET CHAIN</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Left Panel: Skyfield Sky-View Radar & Live Orbital Metrics -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Live Sky-View Az/El Radar</span>
+                <span id="observerCoords">49.28°N, 123.12°W</span>
+            </div>
+
+            <div class="radar-wrapper">
+                <canvas id="skyRadar" width="360" height="360"></canvas>
+            </div>
+
+            <div class="telemetry-grid">
+                <div class="metric-box">
+                    <div class="metric-label">Active Node</div>
+                    <div class="metric-value" id="satName">ISS (ZARYA)</div>
+                </div>
+                <div class="metric-box energy">
+                    <div class="metric-label">Energy Efficiency</div>
+                    <div class="metric-value" id="energyEff">99.998%</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Azimuth / Elevation</div>
+                    <div class="metric-value" id="azElReadout">000.0° / 00.0°</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Slant Range (km)</div>
+                    <div class="metric-value" id="rangeReadout">0.00 km</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Orbital Velocity</div>
+                    <div class="metric-value" id="velReadout">7.66 km/s</div>
+                </div>
+                <div class="metric-box energy">
+                    <div class="metric-label">Specific Energy (ε)</div>
+                    <div class="metric-value" id="specEnergy">-29.4 MJ/kg</div>
+                </div>
+            </div>
+
+            <div class="panel-header" style="margin-top: 0.5rem;">
+                <span>Skyfield SGP4 Signalling Stream</span>
+            </div>
+            <div class="console-log" id="signalConsole"></div>
+        </div>
+
+        <!-- Right Panel: Constellation Blockchain Ledger -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Cryptographic Orbital Telemetry Ledger</span>
+                <span id="chainStats">BLOCKS: 1 | CONSENSUS: PROOF-OF-ORBIT</span>
+            </div>
+            <div class="ledger-feed" id="blockchainLedger"></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * THE ENERGY EFFICIENT SKYS - Orbital Telemetry Blockchain Engine
+         * Integrates SGP4/SDP4 orbital propagation (satellite.js / Skyfield architecture)
+         * with Web Crypto SHA-256 block sealing to eliminate wasteful PoW hashing.
+         */
+
+        // Observer Ground Station (Vancouver, BC default)
+        const OBSERVER = {
+            latitude: 49.2827,
+            longitude: -123.1207,
+            heightKm: 0.05
+        };
+
+        // Active Constellation TLE Dataset (Two-Line Elements)
+        const CONSTELLATION_TLES = [
+            {
+                name: "ISS (ZARYA)",
+                norad: "25544",
+                line1: "1 25544U 98067A   26316.51234567  .00016717  00000-0  10270-3 0  9991",
+                line2: "2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537"
+            },
+            {
+                name: "STARLINK-31042",
+                norad: "58210",
+                line1: "1 58210U 23174A   26316.48912037  .00004215  00000-0  29841-4 0  9994",
+                line2: "2 58210  53.1582 112.4419 0001421  88.1245 272.0112 15.06391245142109"
+            },
+            {
+                name: "HUBBLE (HST)",
+                norad: "20580",
+                line1: "1 20580U 90037B   26316.50112233  .00001234  00000-0  65432-4 0  9998",
+                line2: "2 20580  28.4698 189.1234 0002654 210.4567 149.5432 15.09283746981234"
+            },
+            {
+                name: "NOAA-19",
+                norad: "33591",
+                line1: "1 33591U 09005A   26316.52345678  .00000189  00000-0  12890-3 0  9992",
+                line2: "2 33591  99.1842 312.8765 0014231 145.6789 214.5432 14.12456789891234"
+            }
+        ];
+
+        let blockchain = [];
+        let isRunning = true;
+        let loopInterval = null;
+        let cycleCounter = 0;
+        const LOOP_INTERVAL_MS = 3500; // Main sequence block generation interval
+
+        // Initialize SGP4 satellite records
+        const satRecords = CONSTELLATION_TLES.map(sat => ({
+            ...sat,
+            satrec: satellite.twoline2satrec(sat.line1, sat.line2)
+        }));
+
+        function logSignal(message) {
+            const consoleEl = document.getElementById('signalConsole');
+            const now = new Date().toISOString().split('T')[1].slice(0, -1);
+            consoleEl.innerHTML += `<div>[${now}] ${message}</div>`;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        // SHA-256 Cryptographic Hashing via Web Crypto API
+        async function computeSHA256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Propagate all satellites in constellation for current timestamp
+        function propagateSkyfieldConstellation(date) {
+            const gmst = satellite.gstime(date);
+            const observerGd = {
+                longitude: satellite.degreesToRadians(OBSERVER.longitude),
+                latitude: satellite.degreesToRadians(OBSERVER.latitude),
+                height: OBSERVER.heightKm
+            };
+
+            const MU_EARTH = 398600.4418; // km^3/s^2
+
+            return satRecords.map(sat => {
+                const positionAndVelocity = satellite.propagate(sat.satrec, date);
+                const positionEci = positionAndVelocity.position;
+                const velocityEci = positionAndVelocity.velocity;
+
+                // Fallback synthetic progression if epoch drift exceeds SGP4 window
+                let rVec, vVec;
+                if (!positionEci || isNaN(positionEci.x)) {
+                    const t = date.getTime() / 1000;
+                    const angle = (t * 0.0011) + parseInt(sat.norad);
+                    const radius = 6778 + (parseInt(sat.norad) % 400);
+                    rVec = { x: radius * Math.cos(angle), y: radius * Math.sin(angle), z: radius * 0.3 * Math.sin(angle * 2) };
+                    vVec = { x: -7.66 * Math.sin(angle), y: 7.66 * Math.cos(angle), z: 1.2 };
+                } else {
+                    rVec = positionEci;
+                    vVec = velocityEci;
+                }
+
+                const positionEcf = satellite.eciToEcf(rVec, gmst);
+                const lookAngles = satellite.ecfToLookAngles(observerGd, positionEcf);
+
+                const azimuthDeg = (satellite.radiansToDegrees(lookAngles.azimuth) + 360) % 360;
+                const elevationDeg = satellite.radiansToDegrees(lookAngles.elevation);
+                const rangeSatKm = lookAngles.rangeSat;
+
+                const rMag = Math.sqrt(rVec.x**2 + rVec.y**2 + rVec.z**2);
+                const vMag = Math.sqrt(vVec.x**2 + vVec.y**2 + vVec.z**2);
+
+                // Specific Orbital Energy: ε = v^2/2 - μ/r (MJ/kg)
+                const specificEnergy = ((vMag**2) / 2) - (MU_EARTH / rMag);
+
+                return {
+                    name: sat.name,
+                    norad: sat.norad,
+                    azimuth: azimuthDeg,
+                    elevation: elevationDeg,
+                    rangeKm: rangeSatKm,
+                    velocityKmS: vMag,
+                    specificEnergyMJ: specificEnergy,
+                    eci: rVec
+                };
+            });
+        }
+
+        // Render Sky-View Polar Radar
+        function drawSkyRadar(telemetryList, activeSatName) {
+            const canvas = document.getElementById('skyRadar');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            const cx = w / 2;
+            const cy = h / 2;
+            const maxR = (w / 2) - 24;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Elevation Concentric Rings (0°, 30°, 60° Horizon to Zenith)
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            [1, 0.66, 0.33].forEach(scale => {
+                ctx.beginPath();
+                ctx.arc(cx, cy, maxR * scale, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+
+            // Crosshairs (N-S, E-W)
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - maxR);
+            ctx.lineTo(cx, cy + maxR);
+            ctx.moveTo(cx - maxR, cy);
+            ctx.lineTo(cx + maxR, cy);
+            ctx.stroke();
+
+            // Cardinal Labels
+            ctx.fillStyle = '#64748b';
+            ctx.font = '11px monospace';
+            ctx.fillText('N', cx - 4, cy - maxR - 6);
+            ctx.fillText('S', cx - 4, cy + maxR + 14);
+            ctx.fillText('E', cx + maxR + 6, cy + 4);
+            ctx.fillText('W', cx - maxR - 14, cy + 4);
+
+            // Plot Constellation Satellites
+            telemetryList.forEach(sat => {
+                // Map elevation (-90 to +90 normalized for continuous display)
+                const normEl = Math.max(0, Math.min(90, Math.abs(sat.elevation)));
+                const r = maxR * (1 - (normEl / 90));
+                const azRad = (sat.azimuth - 90) * (Math.PI / 180);
+
+                const x = cx + r * Math.cos(azRad);
+                const y = cy + r * Math.sin(azRad);
+
+                const isSelected = sat.name === activeSatName;
+
+                // Signal beam to zenith/center
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(x, y);
+                ctx.strokeStyle = isSelected ? 'rgba(0, 240, 255, 0.35)' : 'rgba(16, 185, 129, 0.12)';
+                ctx.stroke();
+
+                // Satellite Node Marker
+                ctx.beginPath();
+                ctx.arc(x, y, isSelected ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = isSelected ? '#00f0ff' : '#10b981';
+                ctx.fill();
+
+                if (isSelected) {
+                    ctx.beginPath();
+                    ctx.arc(x, y, 11, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#00f0ff';
+                    ctx.stroke();
+                }
+
+                ctx.fillStyle = isSelected ? '#f8fafc' : '#94a3b8';
+                ctx.font = isSelected ? 'bold 10px monospace' : '9px monospace';
+                ctx.fillText(sat.name.split(' ')[0], x + 8, y + 3);
+            });
+        }
+
+        // Update Telemetry Dashboard Cards
+        function updateDashboardUI(activeSat) {
+            document.getElementById('satName').textContent = activeSat.name;
+            document.getElementById('azElReadout').textContent = `${activeSat.azimuth.toFixed(1)}° / ${activeSat.elevation.toFixed(1)}°`;
+            document.getElementById('rangeReadout').textContent = `${activeSat.rangeKm.toFixed(1)} km`;
+            document.getElementById('velReadout').textContent = `${activeSat.velocityKmS.toFixe
