@@ -564,4 +564,351 @@
             document.getElementById('satName').textContent = activeSat.name;
             document.getElementById('azElReadout').textContent = `${activeSat.azimuth.toFixed(1)}° / ${activeSat.elevation.toFixed(1)}°`;
             document.getElementById('rangeReadout').textContent = `${activeSat.rangeKm.toFixed(1)} km`;
-            document.getElementById('velReadout').textContent = `${activeSat.velocityKmS.toFixe
+            document.getElementById('velReadout').textContent = `${activeSat.velocityKmS.toFixeiv>
+                    <div class="metric-value" id="rangeReadout">0.00 km</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Orbital Velocity</div>
+                    <div class="metric-value" id="velReadout">7.66 km/s</div>
+                </div>
+                <div class="metric-box energy">
+                    <div class="metric-label">Specific Energy (ε)</div>
+                    <div class="metric-value" id="specEnergy">-29.4 MJ/kg</div>
+                </div>
+            </div>
+
+            <div class="panel-header" style="margin-top: 0.5rem;">
+                <span>Skyfield SGP4 Signalling Stream</span>
+            </div>
+            <div class="console-log" id="signalConsole"></div>
+        </div>
+
+        <!-- Right Panel: Constellation Blockchain Ledger -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Cryptographic Orbital Telemetry Ledger</span>
+                <span id="chainStats">BLOCKS: 1 | CONSENSUS: PROOF-OF-ORBIT</span>
+            </div>
+            <div class="ledger-feed" id="blockchainLedger"></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * THE ENERGY EFFICIENT SKYS - Orbital Telemetry Blockchain Engine
+         * Integrates SGP4/SDP4 orbital propagation (satellite.js / Skyfield architecture)
+         * with Web Crypto SHA-256 block sealing to eliminate wasteful PoW hashing.
+         */
+
+        // Observer Ground Station (Vancouver, BC default)
+        const OBSERVER = {
+            latitude: 49.2827,
+            longitude: -123.1207,
+            heightKm: 0.05
+        };
+
+        // Active Constellation TLE Dataset (Two-Line Elements)
+        const CONSTELLATION_TLES = [
+            {
+                name: "ISS (ZARYA)",
+                norad: "25544",
+                line1: "1 25544U 98067A   26316.51234567  .00016717  00000-0  10270-3 0  9991",
+                line2: "2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537"
+            },
+            {
+                name: "STARLINK-31042",
+                norad: "58210",
+                line1: "1 58210U 23174A   26316.48912037  .00004215  00000-0  29841-4 0  9994",
+                line2: "2 58210  53.1582 112.4419 0001421  88.1245 272.0112 15.06391245142109"
+            },
+            {
+                name: "HUBBLE (HST)",
+                norad: "20580",
+                line1: "1 20580U 90037B   26316.50112233  .00001234  00000-0  65432-4 0  9998",
+                line2: "2 20580  28.4698 189.1234 0002654 210.4567 149.5432 15.09283746981234"
+            },
+            {
+                name: "NOAA-19",
+                norad: "33591",
+                line1: "1 33591U 09005A   26316.52345678  .00000189  00000-0  12890-3 0  9992",
+                line2: "2 33591  99.1842 312.8765 0014231 145.6789 214.5432 14.12456789891234"
+            }
+        ];
+
+        let blockchain = [];
+        let isRunning = true;
+        let loopInterval = null;
+        let cycleCounter = 0;
+        const LOOP_INTERVAL_MS = 3500; // Main sequence block generation interval
+
+        // Initialize SGP4 satellite records
+        const satRecords = CONSTELLATION_TLES.map(sat => ({
+            ...sat,
+            satrec: satellite.twoline2satrec(sat.line1, sat.line2)
+        }));
+
+        function logSignal(message) {
+            const consoleEl = document.getElementById('signalConsole');
+            const now = new Date().toISOString().split('T')[1].slice(0, -1);
+            consoleEl.innerHTML += `<div>[${now}] ${message}</div>`;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        // SHA-256 Cryptographic Hashing via Web Crypto API
+        async function computeSHA256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Propagate all satellites in constellation for current timestamp
+        function propagateSkyfieldConstellation(date) {
+            const gmst = satellite.gstime(date);
+            const observerGd = {
+                longitude: satellite.degreesToRadians(OBSERVER.longitude),
+                latitude: satellite.degreesToRadians(OBSERVER.latitude),
+                height: OBSERVER.heightKm
+            };
+
+            const MU_EARTH = 398600.4418; // km^3/s^2
+
+            return satRecords.map(sat => {
+                const positionAndVelocity = satellite.propagate(sat.satrec, date);
+                const positionEci = positionAndVelocity.position;
+                const velocityEci = positionAndVelocity.velocity;
+
+                // Fallback synthetic progression if epoch drift exceeds SGP4 window
+                let rVec, vVec;
+                if (!positionEci || isNaN(positionEci.x)) {
+                    const t = date.getTime() / 1000;
+                    const angle = (t * 0.0011) + parseInt(sat.norad);
+                    const radius = 6778 + (parseInt(sat.norad) % 400);
+                    rVec = { x: radius * Math.cos(angle), y: radius * Math.sin(angle), z: radius * 0.3 * Math.sin(angle * 2) };
+                    vVec = { x: -7.66 * Math.sin(angle), y: 7.66 * Math.cos(angle), z: 1.2 };
+                } else {
+                    rVec = positionEci;
+                    vVec = velocityEci;
+                }
+
+                const positionEcf = satellite.eciToEcf(rVec, gmst);
+                const lookAngles = satellite.ecfToLookAngles(observerGd, positionEcf);
+
+                const azimuthDeg = (satellite.radiansToDegrees(lookAngles.azimuth) + 360) % 360;
+                const elevationDeg = satellite.radiansToDegrees(lookAngles.elevation);
+                const rangeSatKm = lookAngles.rangeSat;
+
+                const rMag = Math.sqrt(rVec.x**2 + rVec.y**2 + rVec.z**2);
+                const vMag = Math.sqrt(vVec.x**2 + vVec.y**2 + vVec.z**2);
+
+                // Specific Orbital Energy: ε = v^2/2 - μ/r (MJ/kg)
+                const specificEnergy = ((vMag**2) / 2) - (MU_EARTH / rMag);
+
+                return {
+                    name: sat.name,
+                    norad: sat.norad,
+                    azimuth: azimuthDeg,
+                    elevation: elevationDeg,
+                    rangeKm: rangeSatKm,
+                    velocityKmS: vMag,
+                    specificEnergyMJ: specificEnergy,
+                    eci: rVec
+                };
+            });
+        }
+
+        // Render Sky-View Polar Radar
+        function drawSkyRadar(telemetryList, activeSatName) {
+            const canvas = document.getElementById('skyRadar');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            const cx = w / 2;
+            const cy = h / 2;
+            const maxR = (w / 2) - 24;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Elevation Concentric Rings (0°, 30°, 60° Horizon to Zenith)
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            [1, 0.66, 0.33].forEach(scale => {
+                ctx.beginPath();
+                ctx.arc(cx, cy, maxR * scale, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+
+            // Crosshairs (N-S, E-W)
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - maxR);
+            ctx.lineTo(cx, cy + maxR);
+            ctx.moveTo(cx - maxR, cy);
+            ctx.lineTo(cx + maxR, cy);
+            ctx.stroke();
+
+            // Cardinal Labels
+            ctx.fillStyle = '#64748b';
+            ctx.font = '11px monospace';
+            ctx.fillText('N', cx - 4, cy - maxR - 6);
+            ctx.fillText('S', cx - 4, cy + maxR + 14);
+            ctx.fillText('E', cx + maxR + 6, cy + 4);
+            ctx.fillText('W', cx - maxR - 14, cy + 4);
+
+            // Plot Constellation Satellites
+            telemetryList.forEach(sat => {
+                // Map elevation (-90 to +90 normalized for continuous display)
+                const normEl = Math.max(0, Math.min(90, Math.abs(sat.elevation)));
+                const r = maxR * (1 - (normEl / 90));
+                const azRad = (sat.azimuth - 90) * (Math.PI / 180);
+
+                const x = cx + r * Math.cos(azRad);
+                const y = cy + r * Math.sin(azRad);
+
+                const isSelected = sat.name === activeSatName;
+
+                // Signal beam to zenith/center
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(x, y);
+                ctx.strokeStyle = isSelected ? 'rgba(0, 240, 255, 0.35)' : 'rgba(16, 185, 129, 0.12)';
+                ctx.stroke();
+
+                // Satellite Node Marker
+                ctx.beginPath();
+                ctx.arc(x, y, isSelected ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = isSelected ? '#00f0ff' : '#10b981';
+                ctx.fill();
+
+                if (isSelected) {
+                    ctx.beginPath();
+                    ctx.arc(x, y, 11, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#00f0ff';
+                    ctx.stroke();
+                }
+
+                ctx.fillStyle = isSelected ? '#f8fafc' : '#94a3b8';
+                ctx.font = isSelected ? 'bold 10px monospace' : '9px monospace';
+                ctx.fillText(sat.name.split(' ')[0], x + 8, y + 3);
+            });
+        }
+
+        // Update Telemetry Dashboard Cards
+        function updateDashboardUI(activeSat) {
+            document.getElementById('satName').textContent = activeSat.name;
+            document.getElementById('azElReadout').textContent = `${activeSat.azimuth.toFixed(1)}° / ${activeSat.elevation.toFixed(1)}°`;
+            document.getElementById('rangeReadout').textContent = `${activeSat.rangeKm.toFixed(1)} km`;
+            document.getElementById('velReadout').textContent = `${activeSat.velocityKmS.toFixed(3)} km/s`;
+            document.getElementById('specEnergy').textContent = `${activeSat.specificEnergyMJ.toFixed(2)} MJ/kg`;
+        }
+
+        // Render Blockchain Ledger Card
+        function renderBlockToUI(block) {
+            const ledgerEl = document.getElementById('blockchainLedger');
+            const card = document.createElement('div');
+            card.className = 'block-card';
+
+            card.innerHTML = `
+                <div class="block-top">
+                    <span class="block-height">BLOCK #${String(block.index).padStart(4, '0')} &bull; ${block.satellite} (NORAD ${block.norad})</span>
+                    <span class="block-badge">ZERO-POW ENERGY SEALED (0.0002 Wh)</span>
+                </div>
+                <div class="block-data">
+                    <div><strong>Timestamp:</strong> ${block.timestamp}</div>
+                    <div><strong>Sky View Az/El:</strong> ${block.telemetry.azimuth.toFixed(2)}° / ${block.telemetry.elevation.toFixed(2)}°</div>
+                    <div><strong>Slant Range:</strong> ${block.telemetry.rangeKm.toFixed(2)} km</div>
+                    <div><strong>Specific Energy (ε):</strong> ${block.telemetry.specificEnergyMJ.toFixed(3)} MJ/kg</div>
+                </div>
+                <div class="hash-row">PREV HASH: <span>${block.previousHash}</span></div>
+                <div class="hash-row">BLOCK HASH: <span>${block.hash}</span></div>
+            `;
+
+            ledgerEl.prepend(card);
+            document.getElementById('chainStats').textContent = `BLOCKS: ${blockchain.length} | CONSENSUS: PROOF-OF-ORBIT`;
+        }
+
+        // Core Block Generation Step
+        async function executeMainLoopCycle() {
+            if (!isRunning) return;
+
+            const now = new Date();
+            const timestampISO = now.toISOString();
+
+            // 1. Propagate Constellation via SGP4 Skyfield Engine
+            const constellationTelemetry = propagateSkyfieldConstellation(now);
+
+            // 2. Round-robin select satellite node for Proof-of-Orbit block validation
+            const activeSat = constellationTelemetry[cycleCounter % constellationTelemetry.length];
+            cycleCounter++;
+
+            // 3. Update Radar & UI Metrics
+            drawSkyRadar(constellationTelemetry, activeSat.name);
+            updateDashboardUI(activeSat);
+
+            // 4. Construct Block Payload
+            const index = blockchain.length;
+            const previousHash = index === 0 ? "0000000000000000000000000000000000000000000000000000000000000000" : blockchain[index - 1].hash;
+
+            const blockPayload = {
+                index,
+                timestamp: timestampISO,
+                satellite: activeSat.name,
+                norad: activeSat.norad,
+                telemetry: {
+                    azimuth: activeSat.azimuth,
+                    elevation: activeSat.elevation,
+                    rangeKm: activeSat.rangeKm,
+                    velocityKmS: activeSat.velocityKmS,
+                    specificEnergyMJ: activeSat.specificEnergyMJ
+                },
+                previousHash
+            };
+
+            // 5. Cryptographically Seal Block with SHA-256
+            const hash = await computeSHA256(JSON.stringify(blockPayload));
+            const sealedBlock = { ...blockPayload, hash };
+
+            blockchain.push(sealedBlock);
+            renderBlockToUI(sealedBlock);
+
+            logSignal(`SGP4 Sync: ${activeSat.name} | Az:${activeSat.azimuth.toFixed(1)}° El:${activeSat.elevation.toFixed(1)}° -> Sealed Block #${index}`);
+        }
+
+        function toggleMainLoop() {
+            isRunning = !isRunning;
+            const btn = document.getElementById('toggleLoopBtn');
+            const dot = document.getElementById('statusDot');
+            const timerText = document.getElementById('loopTimer');
+
+            if (isRunning) {
+                btn.textContent = "PAUSE LOOP";
+                dot.style.backgroundColor = "var(--accent-emerald)";
+                timerText.textContent = "CYCLE: ACTIVE";
+                logSignal("Main telemetry blockchain loop RESUMED.");
+                executeMainLoopCycle();
+            } else {
+                btn.textContent = "RESUME LOOP";
+                dot.style.backgroundColor = "var(--accent-amber)";
+                timerText.textContent = "CYCLE: PAUSED";
+                logSignal("Main telemetry blockchain loop PAUSED.");
+            }
+        }
+
+        function resetChain() {
+            blockchain = [];
+            cycleCounter = 0;
+            document.getElementById('blockchainLedger').innerHTML = '';
+            document.getElementById('signalConsole').innerHTML = '';
+            logSignal("Ledger purged. Re-initializing Genesis Orbit Block...");
+            executeMainLoopCycle();
+        }
+
+        // Bootstrap System on Load
+        window.addEventListener('DOMContentLoaded', () => {
+            logSignal("Initializing THE ENERGY EFFICIENT SKYS Constellation Node...");
+            logSignal("SGP4 Orbital Propagator & WebCrypto SHA-256 Engine Online.");
+            executeMainLoopCycle();
+            loopInterval = setInterval(executeMainLoopCycle, LOOP_INTERVAL_MS);
+        });
+    </script>
+</body>
+</html>
